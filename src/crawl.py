@@ -1,5 +1,8 @@
+# -*- coding:utf-8 -*-
+
 import http.client
 import time
+import pymysql
 from bs4 import BeautifulSoup
 
 def get_response_data(host, path):
@@ -36,6 +39,24 @@ for div in soup.find_all('div'):
         sccc_member[div.a.string] = div.a['href']
 print ('member list(HTML) parse DONE!')
 
+# connect MySQL Connection
+conn = pymysql.connect(host='localhost', user='root', password='sccc2016!', db='db', charset='utf8')
+ 
+# make Cursor from Connection
+curs = conn.cursor()
+ 
+# execute SQL
+sql = "select * from solved_problem"
+curs.execute(sql)
+sql = "delete from solved_problem"
+curs.execute(sql)
+ 
+# fetch Data
+rows = curs.fetchall()
+print(rows)     # 전체 rows
+# print(rows[0])  # 첫번째 row: (1, '김정수', 1, '서울')
+# print(rows[1])  # 두번째 row: (2, '강수정', 2, '서울')
+
 # get solved problem list by member
 solved_problems = {}
 for member, link in sccc_member.items():
@@ -49,33 +70,49 @@ for member, link in sccc_member.items():
     for div in soup.find_all('div'):
         if has_class(div, 'panel-body'):
             panel_cnt = panel_cnt + 1
+            key = 0
+            title = ' '
             for span in div.find_all('span'):
                 if has_class(span, 'problem_number'):
                     cnt = cnt + 1
-                    if not span.a['href'] in solved_problems:
+                elif has_class(span, 'problem_title'):
+                    key = span.a['href']
+                    if not key in solved_problems:
                         # initialize new problem
-                        solved_problems[span.a['href']] = {
+                        solved_problems[key] = {
                             'solved_cnt': 0,
                             'failed_cnt': 0,
                             'solved_users': [],
                             'failed_users': []
                         }
-                    key = span.a['href']
-                    solved_problems[key]['number']=span.a.string
+                    if span.a.string is not None:
+                        title = span.a.string
+                    solved_problems[key]['number'] = key[9:]
+                    solved_problems[span.a['href']]['title']= title
                     # if panel_cnt is 1, solved
                     if panel_cnt == 1:
                         solved_problems[key]['solved_cnt'] = \
                             solved_problems[key]['solved_cnt'] + 1
                         solved_problems[key]['solved_users'].append(member)
+                        sql = """insert into solved_problem(handle,problem,problem_name,solved) values (\'%s\',%s,\'%s\',%s)"""%(member,key[9:],title.replace('\'','\'\''),1)
+                        print(sql)
+                        curs.execute(sql)
                     # else, failed
                     else:
                         solved_problems[key]['failed_cnt'] = \
                             solved_problems[key]['failed_cnt'] + 1
                         solved_problems[key]['failed_users'].append(member)
-                elif has_class(span, 'problem_title'):
-                    solved_problems[span.a['href']]['title']=span.a.string
+                        sql = """insert into solved_problem(handle,problem,problem_name,solved) values (\'%s\',%s,\'%s\',%s)"""%(member,key[9:],title.replace('\'','\'\''),2)
+                        print(sql)
+                        curs.execute(sql)
     print ('user %s(HTML) parse DONE! (%d)' % (member, cnt))
     time.sleep(1)
+
+# commit Connection
+conn.commit()
+
+# close Connection
+conn.close()
 
 file = open('solved_list', 'w')
 file.write(str(solved_problems))
